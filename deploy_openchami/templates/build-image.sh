@@ -1,24 +1,5 @@
-# MIT License
-#
-# (C) Copyright 2025-2026 Hewlett Packard Enterprise Development LP
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-# OTHER DEALINGS IN THE SOFTWARE.
+# SPDX-FileCopyrightText: (C) Copyright 2026 OpenCHAMI a Series of LF Projects, LLC
+# SPDX-License-Identifier: MIT
 
 # Report a failure message on stderr
 function _bi_fail() {
@@ -28,11 +9,24 @@ function _bi_fail() {
     return 1
 }
 
+function yaml_to_json() {
+    python3 -c 'import yaml, json, sys; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=2)'
+}
+
+function derive_architecture() {
+    local uname_arch="$(uname -m)"
+    case "${uname_arch}" in
+        arm64|aarch64) echo "arm64";;
+        amd64|x86_64) echo "amd64";;
+        *) fail "unknown platform architecture '${uname_arch}'";;
+    esac
+}
+
 function build-image() {
     set -e
     local config="${1}"; shift || _bi_fail "image config file not specified"
     # Build with the specified builder. Default to using the RH9 builder
-    local builder="${1:-"ghcr.io/openchami/image-build-el9:v0.1.1"}"
+    local builder="${1:-"ghcr.io/openchami/image-build-el9:latest"}"
     [[ -f "${config}" ]] || _bi_fail "${config} not found"
     podman run \
            --network=host \
@@ -63,11 +57,12 @@ function generate-boot-config() {
     local image_subpath="${1}"; shift || _bi_fail "image subpath (example 'compute/debug') not provided as first argument"
     local headnode_ip="${1}"; shift || _bi_fail "management head-node IP address not provided as second argument"
     local macs="$(for mac in "$@"; do echo "${mac}"; done)"
+    local s3_port="{{ openchami_config.s3.api_port }}"
     [[ "${macs}" != "" ]] || _bi_fail "no target node MAC addresses provided"
     cd /opt/workdir/boot
     local uris="$(s3cmd ls -Hr s3://boot-images | grep "${image_subpath}" | \
                         awk '{print $4}' | \
-                        sed "s-s3://-http://${headnode_ip}:9000/-" | \
+                        sed "s-s3://-http://${headnode_ip}:${s3_port}/-" | \
                         xargs)"
     local uri_img="$(echo "${uris}" | cut -d' ' -f1)"
     [[ "${uri_img}" != "" ]] || _bi_fail "no disk image found that matches '${image_subpath}'"
@@ -75,14 +70,30 @@ function generate-boot-config() {
     [[ "${uri_initramfs}" != "" ]] || _bi_fail "no initrd image found that matches '${image_subpath}'"
     local uri_kernel="$(echo "${uris}" | cut -d' ' -f3)"
     [[ "${uri_kernel}" != "" ]] || _bi_fail "no kernel image found that matches '${image_subpath}'"
+{%- if openchami_config.metadata_service == "metadata-service" %}
+    local cloud_init="cloud-init=enabled ds=nocloud-net;s=http://${headnode_ip}:8081/metadata-service"
+{%- elif openchami_config.metadata_service == "cloud-init" %}
+    local cloud_init="cloud-init=enabled ds=nocloud-net;s=http://${headnode_ip}:8081/cloud-init"
+{%- else %}
+    local cloud_init=""
+{%- endif %}
     cat <<EOF
 ---
 kernel: '${uri_kernel}'
 initrd: '${uri_initramfs}'
-params: 'nomodeset ro root=live:${uri_img} ip=dhcp overlayroot=tmpfs overlayroot_cfgdisk=disabled apparmor=0 selinux=0 console=ttyS0,115200 ip6=off cloud-init=enabled ds=nocloud-net;s=http://${headnode_ip}:8081/cloud-init'
+params: 'nomodeset ro root=live:${uri_img} ip=dhcp overlayroot=tmpfs overlayroot_cfgdisk=disabled apparmor=0 selinux=0 console=ttyS0,115200 ip6=off ${cloud_init}'
 macs:
 $(for mac in ${macs}; do echo "  - ${mac}"; done)
 EOF
+}
+
+generate-boot-config-json() {
+    {%- if openchami_config.use_boot_service %}
+    local query='{ "spec": . }'
+    {%- else %}
+    local query='.'
+    {%- endif %}
+    generate-boot-config "$@" | yaml_to_json | jq "${query}"
 }
 
 function __bmc_user() {
@@ -124,5 +135,18 @@ function restart-node() {
 }
 
 function get-ochami-token() {
+{%- if openchami_config.gen_access_token_works %}
     export DEMO_ACCESS_TOKEN="$(sudo bash -lc 'gen_access_token')"
+{%- else %}
+    export DEMO_ACCESS_TOKEN="$(\
+          sudo podman exec tokensmith /bin/sh -c "\
+               /usr/local/bin/tokensmith user-token create \
+                  --audience smd \
+                  --key-file /tokensmith/data/keys/private.pem \
+                  --subject 'admin@example.com' \
+                  --scopes 'admin' \
+                  --enable-local-user-mint\
+           "
+    )"
+{%- endif %}
 }

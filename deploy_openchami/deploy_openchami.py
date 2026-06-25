@@ -1,29 +1,8 @@
-#!/usr/bin/env python3
-#
-# MIT License
-#
-# (C) Copyright 2026 Hewlett Packard Enterprise Development LP
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-# OTHER DEALINGS IN THE SOFTWARE.
+# SPDX-FileCopyrightText: (C) Copyright 2026 OpenCHAMI a Series of LF Projects, LLC
+# SPDX-License-Identifier: MIT
 
 # pylint: disable=consider-using-f-string
-"""Orchestrate the installation of OpenCHAMI on a single node or cluster.
+"""Deploy OpenCHAMI on a single node or cluster.
 
 """
 
@@ -33,7 +12,7 @@ from getopt import (
     GetoptError
 )
 
-from .installer import Installer
+from .orchestrator import Orchestrator
 from .error import ContextualError, ConfigError
 
 
@@ -59,11 +38,11 @@ def usage(msg=None):
 
 
 USAGE_MSG = """
-Usage: install_openchami [-p|--prep-host][-f|--files-only] [<conf-overlay> ...]
-       install_openchami [-p|--prep-host] -v|--validate [<conf-overlay> ...]
-       install_openchami -c|--config [<conf-overlay> ...]
-       install_openchami -b|--base-config
-       install_openchami -h|--help
+Usage: deploy_openchami [-p|--prep-host][-f|--files-only] [<conf-overlay> ...]
+       deploy_openchami [-p|--prep-host] -v|--validate [<conf-overlay> ...]
+       deploy_openchami -c|--config [<conf-overlay> ...]
+       deploy_openchami -b|--base-config
+       deploy_openchami -h|--help
 
 Where:
     -b|--base-config
@@ -72,22 +51,22 @@ Where:
        displays the merged configuration (without comments) on standard output
     -f|--files-only
        generates and places the files in the manifest configuration but
-       does not run the OpenCHAMI installation
+       does not run the OpenCHAMI deployment
     -p|--prep-host
-       run the installer in 'prepare-host' mode which will set up the initial
-       necessary conditions for the install instead of installing OpenCHAMI.
-       For validation, this skips validation steps that verify that those
-       initial conditions are met, while without this option, those conditions
-       would be checked.
+       run the deployment tool in 'prepare-host' mode which will set up the
+       initial necessary conditions for the deployment instead of deploying
+       OpenCHAMI. For validation, this skips validation steps that verify
+       that those initial conditions are met, while without this option,
+       those conditions would be checked.
     -v|--validate
        validates the merged configuration but does not generate files or
-       install anything
+       deploy anything
     -h|--help
        displays this message
 
     <conf-overlay> is the path to a YAML file containing a configuration
-                     overlay to be applied to the base installation
-                     configuration for the OpenCHAMI system.
+    overlay to be applied to the base deployment configuration for the
+    OpenCHAMI system.
 """[1:]
 
 
@@ -105,7 +84,7 @@ def process_args(argv):
         "'validate' (-v, --validate)"
     )
     ret_opts = {
-        'operation': 'install',
+        'operation': 'deploy',
         'files-only': False,
         'prep-host': False,
     }
@@ -126,15 +105,15 @@ def process_args(argv):
         if opt[0] in ('-h', 'help'):
             # Don't raise a usage error here because this is not an
             # error, just set the operation to 'help'
-            if ret_opts['operation'] != 'install':
+            if ret_opts['operation'] != 'deploy':
                 raise UsageError(action_error)
             ret_opts['operation'] = 'help'
         elif opt[0] in ('-b', 'base-config'):
-            if ret_opts['operation'] != 'install':
+            if ret_opts['operation'] != 'deploy':
                 raise UsageError(action_error)
             ret_opts['operation'] = 'show-base-config'
         elif opt[0] in ('-c', '--config'):
-            if ret_opts['operation'] != 'install':
+            if ret_opts['operation'] != 'deploy':
                 raise UsageError(action_error)
             ret_opts['operation'] = 'show-config'
         elif opt[0] in ('-f', '--files-only'):
@@ -142,7 +121,7 @@ def process_args(argv):
         elif opt[0] in ('-p', '--prep-host'):
             ret_opts['prep-host'] = True
         elif opt[0] in ('-v', '--validate'):
-            if ret_opts['operation'] != 'install':
+            if ret_opts['operation'] != 'deploy':
                 raise UsageError(action_error)
             ret_opts['operation'] = 'validate'
         else:
@@ -152,16 +131,16 @@ def process_args(argv):
             raise UsageError(
                 "INTERNAL ERROR: unprocessed option '%s'" % opt[0]
             )
-    if ret_opts['files-only'] and ret_opts['operation'] != 'install':
+    if ret_opts['files-only'] and ret_opts['operation'] != 'deploy':
         raise UsageError(
-            "'files-only' option is only valid with the install operation"
+            "'files-only' option is only valid with the deploy operation"
         )
     if (
             ret_opts['prep-host'] and
-            ret_opts['operation'] not in ('install', 'validate')
+            ret_opts['operation'] not in ('deploy', 'validate')
     ):
         raise UsageError(
-            "'prep-host' option is only valid with the install or validate "
+            "'prep-host' option is only valid with the deploy or validate "
             "operation"
         )
     return ret_opts, args
@@ -173,21 +152,21 @@ def main(argv):
     """
     options, config_overlays = process_args(argv[1:])
     operation = options['operation']
-    installer = Installer(options, config_overlays)
+    orchestrator = Orchestrator(options, config_overlays)
 
-    # Okay, we know what to do and the installer is ready to do
-    # it. Time to do something.
-    if operation == 'install':
-        installer.install()
+    # Okay, we know what to do and the orchestrator is ready to go.
+    # Time to do something.
+    if operation == 'deploy':
+        orchestrator.deploy()
         return 0
     if operation == 'show-base-config':
-        installer.show_base_config()
+        orchestrator.show_base_config()
         return 0
     if operation == 'show-config':
-        installer.show_config()
+        orchestrator.show_config()
         return 0
     if operation == 'validate':
-        installer.validate()
+        orchestrator.validate()
         return 0
     if operation == 'help':
         usage()

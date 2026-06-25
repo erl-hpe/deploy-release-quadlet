@@ -8,7 +8,7 @@ ContainerName=registry
 HostName=registry
 Image=docker.io/library/registry:latest
 Volume=/data/oci:/var/lib/registry:Z
-PublishPort=5000:5000
+PublishPort={{ openchami_config.registry.api_port }}:{{ openchami_config.registry.api_port }}
 
 [Service]
 TimeoutStartSec=0

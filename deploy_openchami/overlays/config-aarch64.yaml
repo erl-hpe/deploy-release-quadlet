@@ -1,0 +1,32 @@
+images:
+  builders:
+    rocky-base-9:
+      data:
+        repos:
+        # Note: since 'repos' is a list, all of the elements need to be
+        #       specified fully as the new list will completely replace
+        #       the list in the default configuration.
+        - alias: 'Rocky_9_BaseOS'
+          # Change the 'url' field from x86_64 (in the default config) to
+          # 'aarch64' in your config to pull packages of the correct
+          # machine architecture.
+          url: 'https://dl.rockylinux.org/pub/rocky/9/BaseOS/aarch64/os/'
+          gpg: 'https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9'
+        - alias: 'Rocky_9_AppStream'
+          # Change the 'url' field from x86_64 (in the default config) to
+          # 'aarch64' in your config to pull packages of the correct
+          # machine architecture.
+          url: 'https://dl.rockylinux.org/pub/rocky/9/AppStream/aarch64/os/'
+          gpg: 'https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9'
+    compute-base-rocky9:
+      data:
+        # Note: since 'repos' is a list, all of the elements need to be
+        #       specified fully as the new list will completely replace
+        #       the list in the default configuration
+        repos:
+        - alias: 'Epel9'
+          # Change the 'url' field from x86_64 (in the default config) to
+          # 'aarch64' in your config to pull packages of the correct
+          # machine architecture.
+          url: 'https://dl.fedoraproject.org/pub/epel/9/Everything/aarch64/'
+          gpg: 'https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9'

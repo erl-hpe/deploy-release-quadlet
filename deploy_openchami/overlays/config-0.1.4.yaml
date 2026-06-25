@@ -1,0 +1,6 @@
+openchami_config:
+  gen_access_token_works: true
+  coredhcp_named_parameters: false
+  use_boot_service: false
+  metadata_service: cloud-init
+  replace_openchami_env: false

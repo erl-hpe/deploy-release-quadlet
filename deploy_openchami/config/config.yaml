@@ -10,12 +10,12 @@
 deployment_mode: host
 
 # The manifest section contains information about the files to be
-# generated in preparation for installing OpenCHAMI. Most files will be
+# generated in preparation for deploying OpenCHAMI. Most files will be
 # predefined and found in the 'templates' sub-directory of the
-# 'install_openchami' module. Some files are generated directly from
-# config. Two files are installation scripts. One installs OpenCHAMI and
-# one prepares the management host for installing OpenCHAMI. These are
-# identified by the 'install-entrypoint' and 'host-prep-entrypoint'
+# 'deploy_openchami' module. Some files are generated directly from
+# config. Two files are deployment scripts. One deploys OpenCHAMI and
+# one prepares the management host for deploying OpenCHAMI. These are
+# identified by the 'deploy-entrypoint' and 'host-prep-entrypoint'
 # annotations respectively. There must be exectly one file with each
 # annotation in the config. Other annotations are used by the file
 # templates to identify target files for a given action. For example,
@@ -23,22 +23,22 @@ deployment_mode: host
 manifest:
   # 'deployment_user' identifies the username of the user on the host
   # who will be running the deployment. By default this is 'rocky'. This
-  # user must already exist on the host where installation is run and
+  # user must already exist on the host where deployment is run and
   # must be set up for passwordless 'sudo' access. All rendered files
   # generated from this manifest will be owned by this user and its
   # primary group unless otherwise specified in the manifest entry for
-  # the file. 
+  # the file.
   #
   # The primary group ID and user ID will be filled in in this section
-  # by the installer as 'deployment_user.uid' and 'deployment_user.gid'
-  # based on information queried from the host and can be used in file
-  # templates as needed
+  # by the deployment tool as 'deployment_user.uid' and
+  # 'deployment_user.gid' based on information queried from the host and
+  # can be used in file templates as needed
   deployment_user:
     username: rocky
     primary_group: rocky     # used for host preparation
     supplementary_groups: [] # user for host preparation
-    uid: null  # This will always be filled in by the installer
-    gid: null  # This will always be filled in by the installer
+    uid: null  # This will always be filled in by the deployment tool
+    gid: null  # This will always be filled in by the deployment tool
   # The deployment directory is where deployment operations are run
   # from. All files that have a 'target' specification that is a
   # relative pathname are located below the deployment directory.
@@ -46,7 +46,7 @@ manifest:
   # 'files' contains the information about each file to be
   # deployed. If a file has a 'template_name' the template is picked up
   # from that named file among the templates delivered with the
-  # 'install_openchami' module and rendered to the 'target' location on
+  # 'deploy_openchami' module and rendered to the 'target' location on
   # the host. If not the file is generated somehow, and the details are
   # in the description. If 'mkdir' is present and 'true' then the parent
   # directory path will be created as needed with and each created
@@ -89,9 +89,17 @@ manifest:
         type: yaml    # 'yaml' or 'json'
       mode: "644"
       mkdir: true
+    openchami_env:
+      template_name: null  # generated from config
+      target: openchami_env.yaml
+      generation:
+        config_path: openchami_config.openchami_env
+        type: yaml    # 'yaml' or 'json'
+      mode: "600"
+      mkdir: false
     bmc_info:
-      # This template is delivered with the install_openchami module and
-      # gets installed into a system directory with mode "rw-------"
+      # This template is delivered with the deploy_openchami module and
+      # gets created in a system directory with mode "rw-------"
       # and root ownership because it contains some potentially
       # sensitive data.
       template_name: bmc_info.json
@@ -150,11 +158,11 @@ manifest:
       target: openchami-net.xml
       mode: "644"
       mkdir: true
-    openchami-install:
+    openchami-deploy:
       annotations:
-        - install-entrypoint
-      template_name: OpenCHAMI-Install.sh
-      target: OpenCHAMI-Install.sh
+        - deploy-entrypoint
+      template_name: OpenCHAMI-Deploy.sh
+      target: OpenCHAMI-Deploy.sh
       mode: "755"
       mkdir: true
     prep-setup:
@@ -199,11 +207,11 @@ manifest:
       mkdir: true
 
 # The following provides BMC information. For simple stand-alone
-# installs, there are no "real" BMCs (unless your system has them and
+# deployments, there are no "real" BMCs (unless your system has them and
 # you want them configured). Real systems and vTDS deployed systems do
 # have "real" BMCs and they should be configured here.
 #
-# Even for simple standalone installs, though, we do need to have some
+# Even for simple standalone deployments, though, we do need to have some
 # basic BMC information in order to be able  to compose the static
 # discovery information, so we have a BMC defined here, which also
 # serves as an example.
@@ -221,7 +229,7 @@ bmcs:
 # The hosting configuration is here. This identifies the cluster
 # network from the management node (where OpenCHAMI runs) and sets up
 # the DNS and DHCP information needed to set up the network related
-# microservices. 
+# microservices.
 hosting_config:
   # this is the network name not the interface name. It is used to
   # create virtual networks in 'virsh' for 'host' mode operation.
@@ -246,6 +254,173 @@ hosting_config:
   extra_packages:
     pre: []
     main: []
+
+# The 'openchami_config' section provides configuration that is specific
+# to OpenCHAMI itself, not the hosting of it or the nodes or images to
+# be run on it.
+openchami_config:
+  # The file '/etc/openchami/openchami.env' contains environment
+  # variables used by services to configure them. The deployment tool
+  # composes an intermediate YAML file that is used to populate this
+  # file. The 'openchami_env' section is used to generate that file and
+  # can contain quoted Jinja2 template data in its values taken from
+  # elsewhere in this config. Ultimately, every environment variable
+  # here and any you add in an overlay will wind up in
+  # '/etc/openchami/openchami.env'
+  openchami_env:
+    # The host name of the headnode of the OpenCHAMI cluster
+    SYSTEM_NAME: '{{ hosting_config.net_head_hostname }}'
+    # The domain name where the head node is found
+    SYSTEM_DOMAIN: '{{ hosting_config.net_head_domain }}'
+    # The host part of URLs referencing the head node
+    SYSTEM_URL: '{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}'
+
+    # URLs for access to OpenCHAMI services through the head node
+    URLS_SELF_ISSUER: https://${SYSTEM_URL}/
+    URLS_SELF_PUBLIC: https://${SYSTEM_URL}/
+    URLS_LOGIN: https://${SYSTEM_URL}/login
+    URLS_CONSENT: https://${SYSTEM_URL}/consent
+    URLS_LOGOUT: https://${SYSTEM_URL}/logout
+
+    # The general OpenCHAMI postgres database username
+    POSTGRES_USER: ochami
+
+    # SMD Configuration
+    # The name of the postgres server used by SMD
+    SMD_DBHOST: postgres
+    # The port number on which the SMD postgres server runs
+    SMD_DBPORT: '5432'
+    # The name of the SMD database hosted by the SMD postgres server
+    SMD_DBNAME: hmsds
+    # The name of the SMD user for access to the SMD postgres server
+    SMD_DBUSER: smd-user
+    # Options provided when starting the SMD postgres server
+    SMD_DBOPTS: sslmode=disable
+    # The URL of the JWKS server used by SMD. Note, this should use the
+    # same protocol (http or https), server name, and port (if any) as
+    # is used in SMD_AUTH_ISSUER.
+    SMD_JWKS_URL: http://tokensmith:8080/.well-known/jwks.json
+    # The name of the service providing AUTH tokens for SMD
+    SMD_AUTH_BACKEND: tokensmith
+    # The URL of the AUTH token issuer expected by SMD for its
+    # tokens. Note, this should use the same protocol (http or https),
+    # server name and server port as the SMD_JWKS_URL.
+    SMD_AUTH_ISSUER: http://tokensmith:8080
+    # The 'audience' or 'audiences' expected in tokens used to talk to SMD
+    SMD_AUTH_AUDIENCES: smd
+
+    # Tokensmith Authentication Config
+    #
+    # It is unclear what this does. It ostensibly sets the issuer on
+    # tokens, but that does not appear to happen. Keeping it here
+    # because it is in the OpenCHAMI Release
+    TOKENSMITH_ISSUER: http://tokensmith:8080
+    # The cluster identifier for OpenCHAMI in Tokensmith
+    TOKENSMITH_CLUSTER_ID: demo-cluster
+    # It is not clear what this is used for. It appears to be OpenCHAMI
+    # specific, and it i sin the OpenCHAMI Release.
+    TOKENSMITH_OPENCHAMI_ID: demo-openchami
+    # This specifies the location where tokensmith will look for its
+    # configuration. For quadlets, it is a path to a volume mounted in
+    # the container.
+    TOKENSMITH_CONFIG: /etc/tokensmith/config.json
+    # This specifies where tokensmith will store its keys. For quadlets
+    # it is a path to a file within the container.
+    TOKENSMITH_KEY_DIR: /tokensmith/data/keys
+    # This specifies a path to a directory where RFC 8693 bootstrap
+    # token data are stored. For quadlets it is the path within the
+    # container.
+    TOKENSMITH_RFC8693_BOOTSTRAP_STORE: /tokensmith/data/bootstrap
+    # This specifies a path to a directory where RFC 8693 refresh
+    # token data are stored. For quadlets it is the path within the
+    # container.
+    TOKENSMITH_RFC8693_REFRESH_STORE: /tokensmith/data/refresh
+    #TOKENSMITH_OIDC_PROVIDER should point to an actual OIDC provider if
+    # you intend to use a real provider # The default is
+    # http://hydra:4444 which we are putting here to document the
+    # default
+    TOKENSMITH_OIDC_PROVIDER: http://hydra:4444
+    # The port that the tokensmith server listens on internally (if
+    # it is internal) or publicly otherwise. For quadlets, this is the
+    # port that the server listens on in the internal OpenCHAMI network.
+    TOKENSMITH_PORT: 8080
+
+    # Docker StepCA configuration
+    # The directory where Step CA runs. For quadlets this is a path
+    # within the container.
+    STEPPATH: /home/step
+    # The name of the CA that, in other words the issuer of your CA certs
+    DOCKER_STEPCA_INIT_NAME: OpenCHAMI
+    # The list of IPs or hostnames that the CA will accept requests on
+    DOCKER_STEPCA_INIT_DNS_NAMES: step-ca,step-ca.openchami.cluster
+    # Create an initial ACME provisioner for the CA (or not, if not 'true')
+    DOCKER_STEPCA_INIT_ACME: 'true'
+    # The password for the encrypted CA keys and the default CA
+    # provisioner. If this is specified the specified value will be
+    # used. If it is null or missing, it will be generated.
+    DOCKER_STEPCA_INIT_PASSWORD: null
+    # The label for the initial admin (JWK) provisioner.
+    DOCKER_STEPCA_INIT_PROVISIONER_NAME: Admin
+    # The password for the initial admin (JWK) provisioner. If this is
+    # specified the specified value will be used. If it is null or
+    # missing, it will be generated.
+    DOCKER_STEPCA_INIT_PROVISIONER_PASSWORD: null
+
+    # Useful URLs
+    # The URL that reaches SMD
+    SMD_URL: http://smd:27779
+    # THe URL that aliases HSM to SMD
+    HSM_URL: http://smd:27779
+
+    # Disable Ansible host key checking in containers that use ansible
+    ANSIBLE_HOST_KEY_CHECKING: 'False'
+
+  # Some releases may require replacement of openchami.env with the
+  # values configured either here on in an overlay. Others do not
+  # require that. Set the following to enable or disable replacing
+  # this configuration.
+  replace_openchami_env: true
+    
+  # The coredhcp configuration has an old form in which all of the
+  # plug-in parameters are positional and a newer form in which all of the
+  # plug-in parameters are named. The `coredhcp_named_parameters` flag tells
+  # the deployment tool to use named parameters if it is true and positional
+  # parameters if it is false when templating this configuration.
+  coredhcp_named_parameters: true
+
+  # The 'get-ochami-token' command provided by the deployment tool
+  # allows a user to obtain an OAUTH token for use with SMD through
+  # ochami. At least temporarily, there is no working 'gen_access_token'
+  # command available in OpenCHAMI, but there might be again, or you
+  # might be deploying an older version of OpenCHAMI where there was
+  # one. The 'gen_access_token_works' flag tells the deployment tool
+  # whether to use 'gen_access_token' as the basis of 'get-ochami-token'
+  # or supply explicit code for that purpose.
+  gen_access_token_works: false
+
+  # The 'use_boot_service' flag tells the deployment tool that OpenCHAMI
+  # is using the 'boot-service' boot configuration server instead of
+  # BSS. This changes the way the boot configuration is structured and
+  # used during deployment.
+  use_boot_service: true
+
+  # S3 has two ports, the API port where API operations are handled and
+  # the Web-UI (console) port.
+  s3:
+    api_port: 9000
+    console_port: 9001
+  # The registry has one port, the API port where API operations are
+  # handled.
+  registry:
+    api_port: 5000
+
+  # The 'metadata_service' setting tells the deployment tool what kind
+  # of metadata server is in use by OpenCHAMI so that the right commands
+  # and data can be generated. There is a legacy 'cloud-init' setting
+  # and a newer 'metadata-service' setting. This identifies where the
+  # boot time metadata comes from when running cloud-init on the managed
+  # nodes.
+  metadata_service: metadata-service
 
 # The 'nodes' section provides information about the managed nodes to be
 # created / managed by OpenCHAMI. It is used in the 'host' deployment
@@ -325,7 +500,7 @@ images:
           # NOTE: the publish_registry setting here may be used by other
           #       image builders as their 'parent' URL. Make sure if you
           #       change this you change those items as well.
-          publish_registry: '{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:5000/{{ hosting_config.cluster_name }}'
+          publish_registry: '{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:{{ openchami_config.registry.api_port }}/{{ hosting_config.cluster_name }}'
           registry_opts_push:
             - '--tls-verify=false'
         repos:
@@ -362,12 +537,12 @@ images:
           # NOTE: this uses the registry publication path in the
           #       'rocky-base-9' image builder. Make sure if you change
           #       that you change this as well.
-          parent: '{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:5000/{{ hosting_config.cluster_name }}/rocky-base:9'
+          parent: '{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:{{ openchami_config.registry.api_port }}/{{ hosting_config.cluster_name }}/rocky-base:9'
           registry_opts_pull:
           - '--tls-verify=false'
 
           # Publish SquashFS image to local S3
-          publish_s3: 'http://{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:9000'
+          publish_s3: 'http://{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:{{ openchami_config.s3.api_port }}'
           s3_prefix: 'compute/base/'
           s3_bucket: 'boot-images'
           # Publish OCI image to container registry
@@ -378,7 +553,7 @@ images:
           # NOTE: the publish_registry setting here may be used by other
           #       image builders as their 'parent' URL. Make sure if you
           #       change this you change those items as well.
-          publish_registry: '{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:5000/demo'
+          publish_registry: '{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:{{ openchami_config.registry.api_port }}/demo'
           registry_opts_push:
           - '--tls-verify=false'
 
@@ -409,12 +584,12 @@ images:
           # NOTE: this uses the registry publication path in the
           #       'compute-base-rocky9' image builder. Make sure if you
           #       change that you change this as well.
-          parent: '{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:5000/{{ hosting_config.cluster_name }}/compute-base:rocky9'
+          parent: '{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:{{ openchami_config.registry.api_port }}/{{ hosting_config.cluster_name }}/compute-base:rocky9'
           registry_opts_pull:
           - '--tls-verify=false'
 
           # Publish to local S3
-          publish_s3: 'http://{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:9000'
+          publish_s3: 'http://{{ hosting_config.net_head_hostname }}.{{ hosting_config.net_head_domain }}:{{ openchami_config.s3.api_port }}'
           s3_prefix: 'compute/debug/'
           s3_bucket: 'boot-images'
         packages:

@@ -1,29 +1,9 @@
-#
-# MIT License
-#
-# (C) Copyright 2026 Hewlett Packard Enterprise Development LP
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-# OTHER DEALINGS IN THE SOFTWARE.
+# SPDX-FileCopyrightText: (C) Copyright 2026 OpenCHAMI a Series of LF Projects, LLC
+# SPDX-License-Identifier: MIT
 
 # pylint: disable=consider-using-f-string
 """The home of the Config class that holds, validates and prepares the
-configuration for OpenCHAMI installation.
+configuration for OpenCHAMI deployment.
 
 """
 
@@ -96,11 +76,11 @@ MultilineStringSafeDumper.add_representer(
 
 class Config:
     """The OpenCHAMI configuration class that holds, validates and
-    prepares the configuration for OpenCHAMI installation.
+    prepares the configuration for OpenCHAMI deployment.
 
     """
     def __init__(self, options, config_overlays):
-        """Construct the installer instance using the config overlays
+        """Construct the config instance using the config overlays
         and options provided from the caller.
 
         """
@@ -409,9 +389,34 @@ class Config:
         """
         # Nothing to do, just return
 
+    def __prep_openchami_config(self):
+        """Prepare the 'openchami_config' section of the config. Fill
+
+
+        """
+        openchami_env = self.config['openchami_config']['openchami_env']
+        docker_stepca_init_password = (
+            openchami_env.get('DOCKER_STEPCA_INIT_PASSWORD', None)
+        )
+        if not docker_stepca_init_password:
+            openchami_env['DOCKER_STEPCA_INIT_PASSWORD'] = generate_password(
+                length=20
+            )
+        # pylint: disable=invalid-name
+        docker_stepca_init_provisioner_password = (
+            openchami_env.get('DOCKER_STEPCA_INIT_PROVISIONER_PASSWORD', None)
+        )
+        if not docker_stepca_init_provisioner_password:
+            openchami_env['DOCKER_STEPCA_INIT_PROVISIONER_PASSWORD'] = (
+                generate_password(length=20)
+            )
+        # Put it back just in case. This should be implicit but it
+        # never hurts to make it explicit.
+        self.config['openchami_config']['openchami_env'] = openchami_env
+
     def prepare(self):
-        """Prepare the Installer to install the system by reading in
-        the configuration, merging the overlays onto the
+        """Prepare the configuration for deploying the system by
+        reading in the configuration, merging the overlays onto the
         configuration, and generating any configuration data that need
         to be generated.
 
@@ -421,6 +426,7 @@ class Config:
         self.__prep_hosting()
         self.__prep_nodes()
         self.__prep_images()
+        self.__prep_openchami_config()
         return 0
 
     def __check_and_get_dict_key(
@@ -510,16 +516,16 @@ class Config:
                 raise ConfigError(
                     "'manifest.deployment_user.username' user '%s' is not "
                     "provisioned as a user on this host "
-                    "try running installer in 'prep-host' mode "
-                    "before installing OpenCHAMI" % username
+                    "try running openchami_deploy in 'prep-host' mode "
+                    "before deploying OpenCHAMI" % username
                 ) from err
             try:
                 primary_info = getgrnam(primary_group)
             except KeyError as err:
                 raise ContextualError(
                     "error looking up deployment user primary "
-                    "group '%s' (try running installer in 'prep-host' "
-                    "mode before installing OpenCHAMI) - %s" % (
+                    "group '%s' (try running openchami_deploy in 'prep-host' "
+                    "mode before deploying OpenCHAMI) - %s" % (
                         primary_group, str(err)
                     )
                 ) from err
@@ -531,14 +537,14 @@ class Config:
             except KeyError as err:
                 raise ContextualError(
                     "error looking up deployment user supplmentary "
-                    "groups (try running installer in 'prep-host' "
-                    "mode before installing OpenCHAMI) - %s" % str(err)
+                    "groups (try running deploy_openchami in 'prep-host' "
+                    "mode before deploying OpenCHAMI) - %s" % str(err)
                 ) from err
             if user_info.pw_gid != primary_info.gr_gid:
                 raise ConfigError(
                     "deployment user '%s' does not have group '%s' as "
-                    "its primary group try running installer in 'prep-host' "
-                    "mode before installing OpenCHAMI" % (
+                    "its primary group try running openchami_deploy in "
+                    "'prep-host' mode before deploying OpenCHAMI" % (
                         username,
                         primary_group
                     )
@@ -547,8 +553,8 @@ class Config:
                 if username not in group_info.gr_mem:
                     raise ConfigError(
                         "user '%s' is not a member of group '%s' as a "
-                        "supplementary group try running installer in "
-                        "'prep-host' mode before installing OpenCHAMI" % (
+                        "supplementary group try running openchami_deploy "
+                        "in 'prep-host' mode before deploying OpenCHAMI" % (
                             username,
                             group_info.gr_name
                         )
@@ -626,7 +632,7 @@ class Config:
                 "value" % (file_key, mode)
             )
         # The owner and group fields in a file manifest are optional,
-        # but they have to be strings and exist on the installation
+        # but they have to be strings and exist on the deployment
         # host if they are present. Also, if we are doing host
         # preparation, an explicit and existing owner and group must
         # be present.
@@ -753,7 +759,7 @@ class Config:
         self.__valid_manifest_deploy_user()
         self.__valid_manifest_files()
         self.__valid_required_annotation('image-builder')
-        self.__valid_required_annotation('install-entrypoint', 1)
+        self.__valid_required_annotation('deploy-entrypoint', 1)
         self.__valid_required_annotation('host-prep-entrypoint', 1)
 
     def __valid_bmcs(self):
@@ -890,9 +896,25 @@ class Config:
                     )
                 )
 
+    def __valid_openchami_config(self):
+        """Validate the 'openchami_config' section of the
+        configuration.
+
+        """
+        openchami_config = self.config.get('openchami_config', {})
+        openchami_env = openchami_config.get('openchami_env', {})
+        if not openchami_config:
+            raise ConfigError(
+                "'openchami_config' is missing or empty"
+            )
+        if not openchami_env:
+            raise ConfigError(
+                "'openchami_env' in 'openchami_config' is missing or empty"
+            )
+
     def validate(self):
         """Validate the final configuration to be sure that everything
-        is reasonable before attempting an installation.
+        is reasonable before attempting a deployment.
 
         """
         self.load_config()
@@ -909,6 +931,7 @@ class Config:
         self.__valid_hosting()
         self.__valid_nodes()
         self.__valid_images()
+        self.__valid_openchami_config()
 
     def show_config(self):
         """Display the configuration resulting from applying the base

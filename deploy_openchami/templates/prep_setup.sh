@@ -1,26 +1,6 @@
 #! /usr/bin/bash
-#
-# MIT License
-#
-# (C) Copyright 2025-2026 Hewlett Packard Enterprise Development LP
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-# OTHER DEALINGS IN THE SOFTWARE.
+# SPDX-FileCopyrightText: (C) Copyright 2026 OpenCHAMI a Series of LF Projects, LLC
+# SPDX-License-Identifier: MIT
 
 # Set up the system level pieces needed to start deploying
 # OpenCHAMI. This script is intended to be run by a user with
@@ -111,11 +91,6 @@ function switch_dns() {
     # assigned to them...
     local nameserver="${1}"; shift || fail "no nameserver specified to switch to"
     local domain="${1}"; shift || fail "no search domain specified"
-    # Optional network argument tells the logic to place the
-    # nameserver on the connection containing a local network address
-    # but not the nameserver address. If it is not provided the
-    # nameserver address is used.
-    local network="${1:-"${nameserver}"}"
     local connection=""
     local connections="$(
         for connection in $(nmcli --terse --fields NAME connection show); do
@@ -131,18 +106,10 @@ function switch_dns() {
             sudo nmcli connection up "${connection}"
     done
 
-    # Okay, now, find the connection that has an IP address that
-    # matches the internal IP address of the head-node on the
-    # management network (in other words, the connection that is the
-    # management network)
-    connection="$(
-        for connection in $(nmcli --terse --fields NAME connection show); do
-            echo -n "${connection} "
-            nmcli connection show "${connection}" | grep 'ipv4.addresses:'
-        done | grep -F "${network}" | cut -d ' ' -f 1
-    )"
-    [[ "${connection}" =~ ^[^\ ]*$ ]] || fail "more than one interface [${connection}] has the requested local network address '${network}'"
-    [[ "${connection}" != "" ]] || fail "no iinterface found with a suitable network to configure the DNS server '${nameserver}'"
+    # Now find the first interface (nmcli connection) that routes to
+    # the desired name server IP address.
+    connection="$(ip --json route get "${nameserver}" | jq -r '.[0] | .dev')"
+    [[ "${connection}" != "" ]] || fail "no interface found that can reach the DNS server '${nameserver}'"
 
     # Set the nameserver on the connection and put the cluster domain
     # in the search on the same connection
@@ -150,10 +117,6 @@ function switch_dns() {
         sudo nmcli connection modify "${connection}" ipv4.dns-search "${domain}" && \
         sudo nmcli connection down "${connection}" && \
         sudo nmcli connection up "${connection}"
-}
-
-function yaml_to_json() {
-    python3 -c 'import yaml, json, sys; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=2)'
 }
 
 # Some useful variables that can be templated
@@ -167,3 +130,6 @@ MGMT_NET_HEAD_IFNAME="$(find_if_by_addr "${MANAGEMENT_HEADNODE_IP}")"
 DEPLOY_DIR="{{ manifest.deployment_directory }}"
 DEPLOY_USER="{{ manifest.deployment_user.username }}"
 DEPLOY_GROUP="{{ manifest.deployment_user.primary_group }}"
+S3_API_PORT="{{ openchami_config.s3.api_port }}"
+S3_CONSOLE_PORT="{{ openchami_config.s3.console_port }}"
+REGISTRY_API_PORT="{{ openchami_config.registry.api_port }}"

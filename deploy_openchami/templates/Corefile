@@ -1,10 +1,17 @@
 # coresmd-coredns is used on 'cluster' mode deployments of OpenCHAMI
 # to serve host names within the cluster. It is not used in 'host'
-# mode because it conflicts with libvirt DNSMasq, so it can't bind
-# on port 53. This keeps coresmd-coredns from starting, but we don't
-# really care about it. This is what the config for coresmd-coredns
-# would look like on a 'cluster' mode system.
-.:53 {
+# mode because it conflicts with libvirt DNSMasq, so it can't bind on
+# port 53. This means coresmd-coredns needs to run on a different port
+# when in 'host' mode. If you want to use coresmd-coredns in host mode
+# you have to tell DNS consumers to look at that different port for
+# their DNS lookups. For the most part this doesn't matter in 'host'
+# mode, so setting the port to 1053 is just a cosmetic workaround. We
+# use port 53 and disable the conflicting servers in 'cluster' mode.
+{%- if deployment_mode == 'cluster' %}
+ .:53 {
+{%- else %}
+.:1053 {
+{%- endif %}
     # Enable readiness endpoint.
     ready
 
