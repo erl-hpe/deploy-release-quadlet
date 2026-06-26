@@ -80,12 +80,63 @@ function ssh_to_compute_node() {
     return 1
 }
 
-function create_openchami_env() {
+function merge_openchami_env() {
     local input_file="${DEPLOY_DIR}/openchami_env.yaml"
+    local config_file="$(mktemp)"
+    local edited="$(mktemp)"
+    local line
+    local var
     if [ -f "${input_file}" ]; then
+        # Make a temporary file with all of the variables
+        # defined for openchami.env in the configuration in
+        # it so we have a reference.
         yaml_to_json < "${input_file}" | \
-            jq -r 'to_entries | .[] | "\(.key)=\(.value)"' | \
-            sudo tee /etc/openchami/configs/openchami.env > /dev/null
+            jq -r \
+               'to_entries | .[] | "\(.key)=\(.value)"' \
+               > "${config_file}"
+        # Go through the supplied openchami.env line by line. For each
+        # line that sets a variable that is also in the configured
+        # version, comment out that line and put the configured
+        # version in its place. At the end of this, we are going to
+        # grab anything that is in the configured version that is not
+        # in the supplied version and append it to the edited version.
+        sudo cat /etc/openchami/configs/openchami.env | while read line; do
+            if echo "${line}" | grep '^[[:space:]]*#' > /dev/null; then
+                # This line is simply a comment, just copy it over
+                echo "${line}" >> "${edited}"
+                continue
+            fi
+            # Capture the name of the variable being set by the line
+            var="$(echo "${line}" | sed -e 's/^[[:space:]]*\([^=]*\)=.*$/\1/')"
+            # If that variable has a setting in the config, comment it
+            # out and pull in the config setting
+            if [ -z "${var}" ]; then
+                # No variable setting in this line, just copy it over
+                echo "${line}" >> "${edited}"
+                continue
+            fi
+            if ! grep "${var}=" "${config_file}" > /dev/null ; then
+                # The variable is not replaced by config, just copy
+                # the line over
+                echo "${line}" >> "${edited}"
+                continue
+            fi
+            # The variable is being replaced by config. Comment out
+            # the original and put in the configured version.
+            echo "# ${line}" >> "${edited}"
+            grep "${var}=" "${config_file}" >> "${edited}"
+        done
+        # Now go through the config and append any variable settings
+        # that are unique to the config to the edited result.
+        cat "${config_file}" | while read line; do
+            var="$(echo "${line}" | sed -e 's/^[[:space:]]*\([^=]*\)=.*$/\1/')"
+            if ! grep "${var}=" "${edited}" > /dev/null; then
+                echo "${line}" >> "${edited}"
+            fi
+        done
+        # Now put the edited version of openchami.env back in place of
+        # the original
+        sudo cp "${edited}" /etc/openchami/configs/openchami.env
     fi
 }
 
@@ -243,12 +294,10 @@ if [ "${retry}" -eq 10 ]; then
     fail "timed out waiting to clear the SMD and BSS data"
 fi
 
-{%- if openchami_config.replace_openchami_env %}
-# Create a fresh version of /etc/openchami/configs/openchami.env for
-# the quadlets to use. This reflects the deployment tool config, not
-# what was shipped with the release.
-create_openchami_env
-{%- endif %}
+# Create a version of /etc/openchami/configs/openchami.env for the
+# quadlets to use that merges configured values from the deployment
+# config into whatever is already there.
+merge_openchami_env
 
 # Start OpenCHAMI
 info "Starting OpenCHAMI"
