@@ -1,0 +1,5 @@
+openchami_config:
+  gen_access_token_works: false
+  coredhcp_named_parameters: true
+  use_boot_service: true
+  metadata_service: metadata-service
