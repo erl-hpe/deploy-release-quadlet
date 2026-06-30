@@ -294,7 +294,7 @@ openchami_config:
   # plug-in parameters are named. The `coredhcp_named_parameters` flag tells
   # the deployment tool to use named parameters if it is true and positional
   # parameters if it is false when templating this configuration.
-  coredhcp_named_parameters: true
+  coredhcp_named_parameters: false
 
   # The 'get-ochami-token' command provided by the deployment tool
   # allows a user to obtain an OAUTH token for use with SMD through
@@ -304,13 +304,13 @@ openchami_config:
   # one. The 'gen_access_token_works' flag tells the deployment tool
   # whether to use 'gen_access_token' as the basis of 'get-ochami-token'
   # or supply explicit code for that purpose.
-  gen_access_token_works: false
+  gen_access_token_works: true
 
   # The 'use_boot_service' flag tells the deployment tool that OpenCHAMI
   # is using the 'boot-service' boot configuration server instead of
   # BSS. This changes the way the boot configuration is structured and
   # used during deployment.
-  use_boot_service: true
+  use_boot_service: false
 
   # S3 has two ports, the API port where API operations are handled and
   # the Web-UI (console) port.
@@ -328,7 +328,7 @@ openchami_config:
   # and a newer 'metadata-service' setting. This identifies where the
   # boot time metadata comes from when running cloud-init on the managed
   # nodes.
-  metadata_service: metadata-service
+  metadata_service: cloud-init
 
 # The 'nodes' section provides information about the managed nodes to be
 # created / managed by OpenCHAMI. It is used in the 'host' deployment
