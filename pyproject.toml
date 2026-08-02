@@ -65,7 +65,7 @@ lint = [
 ]
 test = [
     # pytest - this comment reduces conflicts in dependabot PRs
-    'pytest>=8.3.3,<8.5.0',
+    'pytest>=9.1.1,<9.2.0',
     # pytest coverage - this comment reduces conflicts in dependabot PRs
     'pytest-cov>=4.1,<8.0',
     # coverage - this comment reduces conflicts in dependabot PRs
