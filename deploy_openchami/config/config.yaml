@@ -53,6 +53,24 @@ manifest:
   # element will be given 0755 permissions and ownership matching the
   # file. If 'mkdir' is not present or 'false', the directory must
   # already exist.
+  #
+  # The annotations section provides for annotations that guide the
+  # deployment tool with respect to the uses of files. Currently
+  # meaningful annotations are:
+  #
+  # - image_builder: this file is an image-builder instruction file
+  # - host-prep-support: this file is used during the host preparation phase
+  # - host-prep-entrypoint: this is the script used to start host preparation
+  # - deploy-support: this file is needed by deployment scripts
+  # - deploy-entrypoint: this script kicks off deployment
+  #
+  # Files with 'host-prep-support' or 'host-prep-entrypoint' annotations
+  # are deployed during the host preparation phase (deploy-openchami -p)
+  # and cannot rely on the deployment user existing. They require an
+  # explicit declaration of 'owner' and 'group' specifying owners and
+  # groups that are known to exist for proper creation. Files without
+  # those annotations will default to the deployment user and group at
+  # creation.
   files:
     rocky-base-image:
       annotations:
@@ -111,6 +129,8 @@ manifest:
     build-image-script:
       template_name: build-image.sh
       target: /etc/profile.d/build-image.sh
+      owner: root
+      group: root
       mode: "644"
     containers-conf:
       # XXX - is this really used anywhere?
@@ -118,20 +138,28 @@ manifest:
       target: containers.conf
       mode: "644"
       mkdir: true
+    # This file needs to be installed after OpenCHAMI Release has been
+    # installed, so generate it in the work area in a directory such
+    # files. It will be copied into place from there once OpenCHAMI
+    # Release has been installed.
     coredhcp:
       template_name: coredhcp.yaml
-      target: /etc/openchami/configs/coredhcp.yaml
+      target: openchami_files/etc/openchami/configs/coredhcp.yaml
       mode: "644"
       owner: root
       group: root
-      mkdir: false
+      mkdir: true
+    # This file needs to be installed after OpenCHAMI Release has been
+    # installed, so generate it in the work area in a directory such
+    # files. It will be copied into place from there once OpenCHAMI
+    # Release has been installed.
     Corefile:
       template_name: Corefile
-      target: /etc/openchami/configs/Corefile
+      target: openchami_files/etc/openchami/configs/Corefile
       owner: root
       group: root
       mode: "644"
-      mkdir: false
+      mkdir: true
     minio-container:
       template_name: minio.container
       target: /etc/containers/systemd/minio.container
@@ -156,29 +184,79 @@ manifest:
       target: openchami-net.xml
       mode: "644"
       mkdir: true
-    openchami-deploy:
+    deploy-sh:
       annotations:
         - deploy-entrypoint
-      template_name: OpenCHAMI-Deploy.sh
-      target: OpenCHAMI-Deploy.sh
+      template_name: deploy.sh
+      target: deployment-scripts/deploy.sh
       mode: "755"
       mkdir: true
     prep-setup:
       annotations:
         - host-prep-support
+        - deploy-support
       template_name: prep_setup.sh
-      target: prep_setup.sh
+      target: deployment-scripts/prep_setup.sh
       owner: root
       group: root
       mode: "644"  # not a script: a sourced file, not stand-alone executable
       mkdir: true
-    prepare-host:
+    setup-node-sh:
       annotations:
         - host-prep-entrypoint
-      template_name: prepare_host.sh
-      target: prepare_host.sh
+      template_name: setup-node.sh
+      target: deployment-scripts/setup-node.sh
       owner: root
       group: root
+      mode: "755"
+      mkdir: true
+    setup-s3-and-registry-sh:
+      annotations:
+        - deploy-support
+      template_name: setup-s3-and-registry.sh
+      target: deployment-scripts/setup-s3-and-registry.sh
+      mode: "755"
+      mkdir: true
+    prepare-openchami-sh:
+      annotations:
+        - deploy-support
+      template_name: prepare-openchami.sh
+      target: deployment-scripts/prepare-openchami.sh
+      mode: "755"
+      mkdir: true
+    install-openchami-sh:
+      annotations:
+        - deploy-support
+      template_name: install-openchami.sh
+      target: deployment-scripts/install-openchami.sh
+      mode: "755"
+      mkdir: true
+    start-openchami-sh:
+      annotations:
+        - deploy-support
+      template_name: start-openchami.sh
+      target: deployment-scripts/start-openchami.sh
+      mode: "755"
+      mkdir: true
+    configure-cluster-sh:
+      annotations:
+        - deploy-support
+      template_name: configure-cluster.sh
+      target: deployment-scripts/configure-cluster.sh
+      mode: "755"
+      mkdir: true
+    build-node-images-sh:
+      annotations:
+        - deploy-support
+      template_name: build-node-images.sh
+      target: deployment-scripts/build-node-images.sh
+      mode: "755"
+      mkdir: true
+    boot-managed-nodes-sh:
+      annotations:
+        - deploy-support
+      template_name: boot-managed-nodes.sh
+      target: deployment-scripts/boot-managed-nodes.sh
       mode: "755"
       mkdir: true
     s3-public-read-boot-images:
@@ -347,6 +425,40 @@ openchami_config:
   # boot time metadata comes from when running cloud-init on the managed
   # nodes.
   metadata_service: metadata-service
+
+  # The 'deployment_phases' section controls which phases of the
+  # deployment process are executed. Set any phase to 'false' to skip
+  # it. This is useful for re-running only specific phases of the
+  # deployment without repeating work that has already been done.
+  #
+  # Phases run in the following order when all are enabled:
+  #   1. setup_node              - install packages, create deploy user,
+  #                                grant passwordless sudo, create
+  #                                /opt/workdir tree
+  #   2. setup_s3_and_registry   - tear down and reinitialise minio and
+  #                                registry, install regctl, create S3
+  #                                buckets
+  #   3. prepare_openchami       - remove old ochami/openchami installs,
+  #                                clone and build the openchami-release
+  #                                RPM
+  #   4. install_openchami       - merge openchami.env, install the
+  #                                built RPM
+  #   5. start_openchami         - start openchami.target, configure the
+  #                                ochami CLI client, wait for SMD
+  #   6. configure_cluster       - static node discovery
+  #   7. build_images            - build node boot images
+  #   8. boot_managed_nodes      - switch DNS (cluster mode), generate
+  #                                boot config, set up cloud-init, boot
+  #                                managed nodes, verify SSH
+  deployment_phases:
+    setup_node: true
+    setup_s3_and_registry: true
+    prepare_openchami: true
+    install_openchami: true
+    start_openchami: true
+    configure_cluster: true
+    build_images: true
+    boot_managed_nodes: true
 
   # ochami may need to be built from a branch or tag, or it may simply
   # be installed as a release RPM. The 'ochami' section determines what
