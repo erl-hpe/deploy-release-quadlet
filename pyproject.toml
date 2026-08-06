@@ -24,7 +24,7 @@ dependencies = [
     # setuptools < 80 is required to provide pkg_resources
     # for passlib and to avoid the pkg_resources deprecation
     # warning
-    'setuptools<80',
+    'setuptools<84',
     # vtds-base for a few template and config operations
     'vtds-base~=0.0'
 ]
