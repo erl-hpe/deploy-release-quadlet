@@ -14,6 +14,7 @@
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" > /dev/null && pwd )"
 source "${SCRIPT_DIR}/prep_setup.sh"
+source /etc/profile.d/build-image.sh
 
 OCHAMI_PATH="$(command -v ochami)" || true
 [ -n "${OCHAMI_PATH}" ] || \
@@ -30,10 +31,10 @@ for retry in {1..10}; do
     if ! sudo podman volume ls | grep -q postgres-data; then
         break
     fi
-    sleep 5
     if sudo podman volume ls --filter dangling=true | grep -q postgres-data; then
         sudo podman volume rm postgres-data && break || true
     fi
+    sleep 5
 done
 if [ "${retry}" -eq 10 ]; then
     { fail "timed out waiting to clear the SMD and BSS data"; exit 1; }
@@ -50,6 +51,17 @@ info "start-openchami: replacing system files with generated versions"
         sudo cp "./${path}" "/${path}"
     done
 )
+
+# ── Set up Cluster SSL Certs  ────────────────────────────────────────
+info "start-openchami: setting up cluster SSL certs for OpenCHAMI"
+sudo openchami-certificate-update update "${MANAGEMENT_HEADNODE_FQDN}"
+
+# ── Set the interface name in coredhcp.yaml ──────────────────────────
+info "start-openchami: set management net IF in 'coredhcp.yaml'"
+sudo sed -i \
+    -e "s/::MGMT_NET_HEAD_IFNAME::/${MGMT_NET_HEAD_IFNAME}/g" \
+    /etc/openchami/configs/coredhcp.yaml
+
 
 # ── Start the OpenCHAMI target ────────────────────────────────────────
 info "start-openchami: starting openchami.target"

@@ -54,6 +54,16 @@ function ssh_to_compute_node() {
     return 1
 }
 
+# ── Get OCHAMI Token ─────────────────────────────────────────────
+info "boot-managed-nodes: waiting for an ochami access token"
+for i in {1..10}; do
+    get-ochami-token || DEMO_ACCESS_TOKEN=""
+    [ -n "${DEMO_ACCESS_TOKEN}" ] && break
+    sleep 10
+done
+[ -n "${DEMO_ACCESS_TOKEN}" ] || \
+    { fail "cannot obtain ochami access token"; exit 1; }
+
 # ── Create work directories ───────────────────────────────────────────
 for dir in "${WORK_DIRS[@]}"; do
     info "boot-managed-nodes: preparing work directory ${dir}"

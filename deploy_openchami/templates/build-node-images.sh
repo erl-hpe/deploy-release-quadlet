@@ -20,17 +20,19 @@ IMAGE_BUILDERS=(
     {%- endfor %}
 )
 
-# Refresh the ochami token before the (potentially long) image builds
-info "build-node-images: obtaining ochami access token"
-get-ochami-token || { fail "unable to obtain ochami access token"; exit 1; }
+# ── Get OCHAMI Token ─────────────────────────────────────────────
+info "build-images: waiting for an ochami access token"
+for i in {1..10}; do
+    get-ochami-token || DEMO_ACCESS_TOKEN=""
+    [ -n "${DEMO_ACCESS_TOKEN}" ] && break
+    sleep 10
+done
+[ -n "${DEMO_ACCESS_TOKEN}" ] || \
+    { fail "cannot obtain ochami access token"; exit 1; }
 
 for builder in "${IMAGE_BUILDERS[@]}"; do
     info "build-node-images: building image from '${builder}'"
     build-image "${builder}"
 done
-
-# Refresh token after builds in case it expired during a long build
-info "build-node-images: refreshing ochami access token"
-get-ochami-token || { fail "unable to refresh ochami access token"; exit 1; }
 
 info "build-node-images: complete"

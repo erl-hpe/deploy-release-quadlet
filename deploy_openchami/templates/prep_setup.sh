@@ -133,6 +133,10 @@ function switch_dns() {
         sudo nmcli connection up "${connection}"
 }
 
+function yaml_to_json() {
+    python3 -c 'import yaml, json, sys; yaml.SafeLoader.yaml_implicit_resolvers.pop(":", None); json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=2)'
+}
+
 # Some useful variables that can be templated
 CLUSTER_DOMAIN="{{ hosting_config.net_head_domain }}"
 CLUSTER_NAME="{{ hosting_config.cluster_name }}"

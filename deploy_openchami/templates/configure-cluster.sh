@@ -10,7 +10,19 @@
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" > /dev/null && pwd )"
 source "${SCRIPT_DIR}/prep_setup.sh"
+source /etc/profile.d/build-image.sh
 
+# ── Get OCHAMI Token ─────────────────────────────────────────────
+info "cofigure-cluster: waiting for an ochami access token"
+for i in {1..10}; do
+    get-ochami-token || DEMO_ACCESS_TOKEN=""
+    [ -n "${DEMO_ACCESS_TOKEN}" ] && break
+    sleep 10
+done
+[ -n "${DEMO_ACCESS_TOKEN}" ] || \
+    { fail "cannot obtain ochami access token"; exit 1; }
+
+# ── Perform static node discovery ───────────────────────────────
 info "configure-cluster: performing static node discovery"
 ochami discover static $(discovery_version) \
     -f yaml \

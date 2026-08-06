@@ -9,10 +9,6 @@ function _bi_fail() {
 }
 alias die="return 1"
 
-function yaml_to_json() {
-    python3 -c 'import yaml, json, sys; yaml.SafeLoader.yaml_implicit_resolvers.pop(":", None); json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=2)'
-}
-
 function build-image() {
     local config="${1}"; shift || { _bi_fail "image config file not specified"; die; }
     # Build with the specified builder. Default to using the RH9 builder
