@@ -56,8 +56,6 @@ OPENCHAMI_URL="{{ openchami_config.release.url }}"
 RELEASE_VERSION="{{ openchami_config.release.version }}"
 info "prepare-openchami: cloning openchami-release: ${OPENCHAMI_URL}"
 git clone "${OPENCHAMI_URL}" "${DEPLOY_DIR}/openchami_release"
-su - "${DEPLOY_USER}" -c \
-     "git config --global --add safe.directory '${DEPLOY_DIR}/openchami_release'"
 cd "${DEPLOY_DIR}/openchami_release"
 info "prepare-openchami: checking out version '${RELEASE_VERSION}'"
 git checkout "${RELEASE_VERSION}"
